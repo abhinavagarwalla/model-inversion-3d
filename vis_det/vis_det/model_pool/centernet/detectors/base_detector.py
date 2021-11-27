@@ -91,7 +91,7 @@ class BaseDetector(object):
     elif type(image_or_path_or_tensor) == type (''): 
       image = cv2.imread(image_or_path_or_tensor)
     else:
-      image = image_or_path_or_tensor['image'][0].numpy()
+      image = image_or_path_or_tensor['image']
       pre_processed_images = image_or_path_or_tensor
       pre_processed = True
     
@@ -105,9 +105,9 @@ class BaseDetector(object):
         images, meta = self.pre_process(image, scale, meta)
       else:
         # import pdb; pdb.set_trace()
-        images = pre_processed_images['images'][scale][0]
-        meta = pre_processed_images['meta'][scale]
-        meta = {k: v.numpy()[0] for k, v in meta.items()}
+        images = image #pre_processed_images['images'][scale][0]
+        meta = meta #pre_processed_images['meta'][scale]
+        #meta = {k: v.numpy()[0] for k, v in meta.items()}
       images = images.to(self.opt.device)
       torch.cuda.synchronize()
       pre_process_time = time.time()
