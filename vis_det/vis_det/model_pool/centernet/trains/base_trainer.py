@@ -7,7 +7,7 @@ import torch
 from progress.bar import Bar
 from models.data_parallel import DataParallel
 from utils.utils import AverageMeter
-
+import numpy as np
 
 class ModelWithLoss(torch.nn.Module):
   def __init__(self, model, loss):
@@ -103,6 +103,77 @@ class BaseTrainer(object):
     ret['time'] = bar.elapsed_td.total_seconds() / 60.
     return ret, results
   
+  def calculate_clipping(self, scale=1/255):
+    """
+    Helper function for calculating lo and hi.
+
+    Args:
+    -- cfg: configuration file for model
+    -- scale: scale for lo, hi. If lo, hi in [0,255], scale is 1. If lo, hi in [0,1], scale is 1/255
+
+    Returns:
+    -- LO, HI: list, lower bound and upper bound of each channel
+    """
+    LO = []
+    HI = []
+    mean = np.array([0.485, 0.456, 0.406], np.float32)
+    std = np.array([0.229, 0.224, 0.225], np.float32)
+    for c in range(3):
+        lo = float(-mean[c] / std[c])*scale
+        hi = float((255.0 - mean[c]) / std[c])*scale
+        LO.append(lo)
+        HI.append(hi)
+    return LO, HI
+
+  def clipping(self, X, lo, hi):
+    """
+    Helper function for clipping.
+
+    Args:
+    -- X: Pytorch tensor of shape (N, C, H, W)
+    -- lo: list, lower bound for each channel
+    -- hi: list, upper bound for each channel
+
+    Returns:
+    -- X: Pytorch tensor of shape (N, C, H, W)
+    """
+    for c in range(3):
+        X.data[:, c].clamp_(min=lo[c], max=hi[c])
+    return X
+
+  def image_init(self, images):
+    lo, hi = self.calculate_clipping()
+    # initialize input tensor
+    with torch.no_grad():
+        x = torch.randn(images.shape).to(images.device)
+        x = x * 0.2
+        x = self.clipping(x, lo, hi)
+    return x
+  
+  def invert(self, batch, device, iters=1000):
+    model_with_loss = self.model_with_loss
+    model_with_loss.eval()
+    model_with_loss = model_with_loss.to(device)
+    opt = self.opt
+    print_every = 50
+    print(device)
+    for k in batch:
+      if k != 'meta':
+        batch[k] = batch[k].to(device=device)
+    batch['input'] = self.image_init(batch['input'])
+    batch['input'].requires_grad_(True)
+    for iter in range(iters):
+      output, loss, loss_stats = model_with_loss(batch)
+      # TODO: Add the TV loss here
+      loss = loss.mean()
+      self.optimizer.zero_grad()
+      loss.backward()
+      self.optimizer.step()
+      if iter%print_every == 0:
+        print(f"iter = {iter}, loss={loss.item()}")
+       
+    
+
   def debug(self, batch, output, iter_id):
     raise NotImplementedError
 
@@ -117,3 +188,6 @@ class BaseTrainer(object):
 
   def train(self, epoch, data_loader):
     return self.run_epoch('train', epoch, data_loader)
+
+  def infer(self, batch, device, iters):
+    return self.invert(batch, device, iters)
