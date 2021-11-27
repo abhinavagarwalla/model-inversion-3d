@@ -51,12 +51,18 @@ class InversionLoss(nn.Module):
 
 # Abstracted as a class so that we can add experiment with different initialisations
 class PointInitializer(nn.Module):
-    def __init__(self, type):
+    def __init__(self, type, num_points=1024):
         super().__init__()
 
         assert(type is not None)
         if type == 'uniform_cube':
-            self.xyz = torch.zeros((1, 3, 1024)).uniform_(-1,1).cuda()
+            self.xyz = torch.zeros((1, 3, num_points)).uniform_(-0.2,0.2).cuda()
+        elif type == 'zero':
+            self.xyz = torch.zeros((1, 3, num_points)).cuda()
+        elif type == 'spherical_boundary':
+            raise NotImplementedError
+        elif type == 'spherical_volume':
+            raise NotImplementedError
         else:
             raise NotImplementedError
 
@@ -67,7 +73,8 @@ def invert(model, num_class=40, class_to_invert=0, num_steps=1000):
 
     classifier = model.eval()
 
-    points = PointInitializer(type='uniform_cube').xyz
+    # points = PointInitializer(type='uniform_cube', num_points=10000).xyz
+    points = PointInitializer(type='zero', num_points=10000).xyz #works better
         
     #visualize random points
     # vispcd(points)
@@ -93,7 +100,7 @@ def invert(model, num_class=40, class_to_invert=0, num_steps=1000):
 
         pred_choice = pred.data.max(1)[1]
         print("Predicted: ", pred_choice)
-        print("Mean Max Min x: ", points.mean(), points.max(), points.min())
+        print("Mean Max Min x: ", points.mean().item(), points.max().item(), points.min().item())
 
         if j % 100 == 0 and pred_choice.item() == target.item():
             vispcd(points)
@@ -126,13 +133,6 @@ def main(args):
     log_string('PARAMETER ...')
     log_string(args)
 
-    '''DATA LOADING'''
-    log_string('Load dataset ...')
-    data_path = 'data/modelnet40_normal_resampled/'
-
-    test_dataset = ModelNetDataLoader(root=data_path, args=args, split='test', process_data=False)
-    testDataLoader = torch.utils.data.DataLoader(test_dataset, batch_size=args.batch_size, shuffle=False, num_workers=10)
-
     '''MODEL LOADING'''
     num_class = args.num_category
     model_name = os.listdir(experiment_dir + '/logs')[0].split('.')[0]
@@ -145,11 +145,9 @@ def main(args):
     checkpoint = torch.load(str(experiment_dir) + '/checkpoints/best_model.pth')
     classifier.load_state_dict(checkpoint['model_state_dict'])
 
-    # with torch.no_grad():
     inverted_points = invert(classifier.eval(), num_class=num_class, class_to_invert=0)
     print(inverted_points)
 
-    # Add code for visualization for points
 
 if __name__ == '__main__':
     args = parse_args()
