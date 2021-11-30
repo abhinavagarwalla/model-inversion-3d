@@ -5,7 +5,7 @@ from __future__ import print_function
 import numpy as np
 import cv2
 from .ddd_utils import compute_box_3d, project_to_image, draw_box_3d
-
+import matplotlib.pyplot as plt
 class Debugger(object):
   def __init__(self, ipynb=False, theme='black', 
                num_classes=-1, dataset=None, down_ratio=4):
@@ -213,7 +213,8 @@ class Debugger(object):
                    3, (int(c[0]), int(c[1]), int(c[2])), -1)
 
   def show_all_imgs(self, pause=False, time=0):
-    if not self.ipynb:
+    #if not self.ipynb:
+    if False:
       for i, v in self.imgs.items():
         #cv2.imshow('{}'.format(i), v)
         print(i)
@@ -222,6 +223,7 @@ class Debugger(object):
       #   import sys
       #   sys.exit(0)
     else:
+      print("Here Shubham!! What u doing man")
       self.ax = None
       nImgs = len(self.imgs)
       fig=self.plt.figure(figsize=(nImgs * 10,10))
@@ -330,6 +332,8 @@ class Debugger(object):
             box_3d = compute_box_3d(dim, loc, rot_y)
             box_2d = project_to_image(box_3d, calib)
             self.imgs[img_id] = draw_box_3d(self.imgs[img_id], box_2d, cl)
+    #plt.imshow(self.imgs[img_id])
+    #plt.show()
 
   def compose_vis_add(
     self, img_path, dets, calib,
@@ -391,8 +395,8 @@ class Debugger(object):
               True,lc,2,lineType=cv2.LINE_AA)
           for e in [[0, 1]]:
             t = 4 if e == [0, 1] else 1
-            cv2.line(bird_view, (rect[e[0]][0], rect[e[0]][1]),
-                    (rect[e[1]][0], rect[e[1]][1]), lc, t,
+            cv2.line(bird_view, (int(rect[e[0]][0]), int(rect[e[0]][1])),
+                    (int(rect[e[1]][0]), int(rect[e[1]][1])), lc, t,
                     lineType=cv2.LINE_AA)
     self.imgs[img_id] = bird_view
 

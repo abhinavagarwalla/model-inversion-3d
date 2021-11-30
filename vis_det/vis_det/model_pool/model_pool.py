@@ -23,6 +23,7 @@ def load_default_predictor(name):
     cfg.MODEL.RETINANET.SCORE_THRESH_TEST = 0.5
     cfg.MODEL.ROI_HEADS.SCORE_THRESH_TEST = 0.5
     cfg.MODEL.WEIGHTS = model_zoo.get_checkpoint_url(name)
+    #cfg.MODEL.DEVICE = 'cpu'
     predictor = DefaultPredictor(cfg)
     return predictor, cfg
 
@@ -158,7 +159,7 @@ def get_data(name="coco_2017_val"):
                     metadata = MetadataCatalog.get(dataset_instance_name)
             elif 'detection' in name:
                 dataset_instance_name = "kitti_detection_2d"
-                path = "/home/devenish/Desktop/delight/datasets/kitti_object/"
+                path = "/data/datasets/paritosh/16824/kitti/"
                 # try:
                 #     dataset = detectron2.data.get_detection_dataset_dicts((dataset_instance_name,))
                 #     metadata = MetadataCatalog.get(dataset_instance_name)

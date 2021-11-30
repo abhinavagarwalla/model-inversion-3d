@@ -97,6 +97,8 @@ class layout_optimize(object):
             # if i % 10 == 0:
             #     print("iteration %d" % (i))
             losses = model.vis(x*255, gt_instances, images, scale_weight=self.scale_weight)
+            if i % 50 == 0:
+                print(f"Loss Stage 0: {losses}")
             if self.alter is True:
                 loss = loss_fun.forward(x, losses, alter=True, stage=0)
                 optimizer.zero_grad()
@@ -109,6 +111,8 @@ class layout_optimize(object):
                 optimizer.step()
             else:
                 loss = loss_fun.forward(x, losses, alter=False)
+                if i % 50 == 0:
+                    print(f"Loss Stage 1: {loss}")
                 optimizer.zero_grad()
                 loss.backward()
                 optimizer.step()
