@@ -10,7 +10,7 @@ from utils.utils import AverageMeter
 import numpy as np
 from copy import deepcopy
 from scipy.ndimage.filters import gaussian_filter1d
-
+import matplotlib.pyplot as plt
 class ModelWithLoss(torch.nn.Module):
   def __init__(self, model, loss):
     super(ModelWithLoss, self).__init__()
@@ -250,10 +250,81 @@ class BaseTrainer(object):
         if iter % blur_every == 0:
             sigma = max(sigma * blur_decay, blur_end)
             self.blur_image(batch['input'], sigma=sigma)
+      if iter % 20 == 0:
+        img = batch['input'].squeeze().detach().cpu()
+        img_disp = img.permute(1,2,0)
+        #plt.imshow((img_disp+1)*0.5)
+        img_path = "/home/paritosh/Desktop/SEM2/16824/code/vlr-project/animation_images/18/" + str(iter) + ".png"
+        try:
+          plt.imsave(img_path,((img_disp+1)*0.5).detach().cpu().numpy(), dpi=1200)
+        except:
+          print(iter)
         # if if_jitter is True:
         #     if i % jitter_every == 0:
         #         jitter(batch['input'], jitter_x, jitter_y)
-       
+  def invert_with_output(self, batch, device, iters=1000):
+    lo, hi = self.calculate_clipping()
+    model_with_loss = self.model_with_loss
+    model_with_loss.eval()
+    model_with_loss.model.eval()
+    model_with_loss = model_with_loss.to(device)
+    opt = self.opt
+    print_every = 50
+    print(device)
+    for k in batch:
+      if k != 'meta':
+        batch[k] = batch[k].to(device=device)
+    output, loss, loss_stats = model_with_loss(batch)
+    #print(output.keys())
+    for key in output:
+      if key in batch:
+        #batch[key] = output[key]
+        print(key, batch[key].shape, output[key].shape)
+      #batch[key] = output[key]
+    assert(False)
+    batch['input'] = self.image_init(batch['input'])
+
+    init_image = deepcopy(batch['input'])
+    batch['input'].requires_grad_(True)
+    optimizer = torch.optim.SGD([batch['input']], lr=2, momentum=0.5)
+    scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=500, gamma=0.6)
+    tv_alpha =  2
+    lamb_tv = 1.0e-5
+
+    blur_every =  5
+    blur_start = 5.0
+    blur_decay = 0.985
+    blur_end = 0.5
+
+    if_jitter = False
+    jitter_every = 30
+    jitter_x = 4
+    jitter_y = 4
+    sigma = blur_start
+    for iter in range(iters):
+      output, loss, loss_stats = model_with_loss(batch)
+      # TODO: Add the TV loss here
+      loss = loss.mean()
+      loss += 3 * lamb_tv * self.tv_loss(batch['input'], tv_alpha)
+      optimizer.zero_grad()
+      loss.backward()
+      optimizer.step()
+      scheduler.step()
+      if iter%print_every == 0:
+        print(f"iter = {iter}, loss={loss.item()}")
+        print(loss)
+        print(loss_stats)
+        if torch.equal(init_image, batch['input']):
+          print("Not changing")
+      
+      with torch.no_grad():
+        batch['input'] = self.clipping(batch['input'], lo, hi)
+        if iter % blur_every == 0:
+            sigma = max(sigma * blur_decay, blur_end)
+            self.blur_image(batch['input'], sigma=sigma)
+        # if if_jitter is True:
+        #     if i % jitter_every == 0:
+        #         jitter(batch['input'], jitter_x, jitter_y)     
     
 
   def debug(self, batch, output, iter_id):
@@ -273,3 +344,6 @@ class BaseTrainer(object):
 
   def infer(self, batch, device, iters):
     return self.invert(batch, device, iters)
+  
+  def infer_with_model_out(self, batch, device, iters):
+    return self.invert_with_output(batch, device, iters)
