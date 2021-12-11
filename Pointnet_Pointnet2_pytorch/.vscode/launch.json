@@ -10,7 +10,10 @@
             "request": "launch",
             "program": "${file}",
             "console": "integratedTerminal",
-            "args":["--log_dir=pointnet2_ssg_wo_normals"]
+            "args":["--log_dir=pointnet2_ssg_wo_normals",
+                    "--class_to_invert=0",
+                    "--output_dir=./output_zero/"
+                ]
         }
     ]
 }

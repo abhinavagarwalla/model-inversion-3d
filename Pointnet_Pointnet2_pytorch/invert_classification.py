@@ -15,6 +15,7 @@ import importlib
 from torch import nn
 
 import open3d as o3d
+import open3d.ml.torch as ml3d
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 ROOT_DIR = BASE_DIR
@@ -33,12 +34,45 @@ def parse_args():
     parser.add_argument('--use_normals', action='store_true', default=False, help='use normals')
     parser.add_argument('--use_uniform_sample', action='store_true', default=False, help='use uniform sampiling')
     parser.add_argument('--num_votes', type=int, default=3, help='Aggregate classification scores with voting')
+    parser.add_argument('--class_to_invert', default=0, type=int, help='Specify the class to invert')
+    parser.add_argument('--output_dir', default=None, required=True, type=str, help='output dir to save file')
+    parser.add_argument('--regularize', action='store_true', default=False, help='use regularisation')
     return parser.parse_args()
 
-def vispcd(points):
+def vispcd(points, iter, output_dir):
     pcd = o3d.geometry.PointCloud()
     pcd.points = o3d.utility.Vector3dVector(points.cpu().detach().numpy()[0].T)
-    o3d.visualization.draw_geometries([pcd])
+    pcd.paint_uniform_color([1, 0, 0])
+
+    viewer = o3d.visualization.Visualizer()
+    viewer.create_window()
+    viewer.add_geometry(pcd)
+    # o3d.visualization.draw_geometries([pcd])
+    # viewer.run()
+    # viewer.capture_screen_image(f'./output/{iter}.png')
+    # viewer.close()
+
+    hull, sel_points = pcd.compute_convex_hull()
+    hull_ls = o3d.geometry.LineSet.create_from_triangle_mesh(hull)
+    hull_ls.paint_uniform_color((0, 0, 0))
+    viewer.add_geometry(hull_ls)
+    # viewer.run()
+
+    '''alpha = 0.03
+    print(f"alpha={alpha:.3f}")
+    pcd_hull = o3d.geometry.PointCloud()
+    pcd_hull.points = pcd.points[sel_points]
+    pcd_hull.paint_uniform_color([1, 0, 0])
+    
+    mesh = o3d.geometry.TriangleMesh.create_from_point_cloud_alpha_shape(pcd_hull, alpha)
+    mesh.compute_vertex_normals()
+    viewer.add_geometry(mesh)'''
+
+
+    viewer.poll_events()
+    viewer.update_renderer()
+    viewer.capture_screen_image(f'./{output_dir}/{iter}.png')
+    viewer.destroy_window()
 
 # Abstracted as a class so that we can add regularizers and custom loss
 class InversionLoss(nn.Module):
@@ -58,7 +92,8 @@ class PointInitializer(nn.Module):
         if type == 'uniform_cube':
             self.xyz = torch.zeros((1, 3, num_points)).uniform_(-0.2,0.2).cuda()
         elif type == 'zero':
-            self.xyz = torch.zeros((1, 3, num_points)).cuda()
+            # self.xyz = torch.zeros((1, 3, num_points)).cuda()
+            self.xyz = torch.zeros((1, 3, num_points)).uniform_(-0.0001,0.0001).cuda()
         elif type == 'spherical_boundary':
             raise NotImplementedError
         elif type == 'spherical_volume':
@@ -77,7 +112,9 @@ def invert(model, num_class=40, class_to_invert=0, num_steps=1000):
     points = PointInitializer(type='zero', num_points=10000).xyz #works better
         
     #visualize random points
-    # vispcd(points)
+    output_dir = os.path.join(args.output_dir, str(args.class_to_invert))
+    os.makedirs(output_dir, exist_ok=True)
+    vispcd(points, iter=0, output_dir=output_dir)
 
     target = torch.Tensor([class_to_invert]).long().cuda()
     criterion = InversionLoss()
@@ -102,11 +139,52 @@ def invert(model, num_class=40, class_to_invert=0, num_steps=1000):
         print("Predicted: ", pred_choice)
         print("Mean Max Min x: ", points.mean().item(), points.max().item(), points.min().item())
 
-        if j % 100 == 0 and pred_choice.item() == target.item():
-            vispcd(points)
-            vispcd(l2_points_pos)
-            vispcd(l1_points_pos)
+        if args.regularize and j % 10 == 0:
+            #average using neighbouring
+            alpha = 0.03
+            with torch.no_grad():
+                pcd = o3d.geometry.PointCloud()
+                pcd.points = o3d.utility.Vector3dVector(points.cpu().detach().numpy()[0].T)
 
+                '''mesh = o3d.geometry.TriangleMesh.create_from_point_cloud_alpha_shape(pcd, alpha)
+                mesh.filter_smooth_taubin()
+                points_np = np.asarray(mesh.vertices)
+                points.data = torch.from_numpy(points_np)'''
+
+                #distances = pcd.compute_mahalanobis_distance()
+                #print(distances.shape)
+
+                '''ans = ml3d.ops.knn_search(points[0].t().cpu(),
+                    points[0].t().cpu(), k=2,
+                    points_row_splits=torch.LongTensor([0,len(points)]),
+                    queries_row_splits=torch.LongTensor([0,len(points)]),
+                    #ignore_query_point=True,
+                    return_distances=True)
+                print(ans)'''
+
+                _, sel_points = pcd.compute_convex_hull()
+
+                distances = torch.cdist(points.transpose(1, 2), points.transpose(1, 2))
+                #print(distances.shape)
+
+                values, neighbors = torch.topk(distances[0], k=2, largest=False)
+                new_points = torch.zeros_like(points)
+                for i in range(new_points.shape[-1]):
+                    if False:#i in sel_points:
+                        new_points[:, :, i] = points[:, :, i]
+                    else:
+                        new_points[:, :, i] = points[:, :, neighbors[i]].mean(dim=-1)
+
+                points.data = new_points.data
+
+
+        
+        if j % 50 == 0 and pred_choice.item() == target.item():
+            vispcd(points, iter=j, output_dir=output_dir)
+            # vispcd(l2_points_pos, iter=j)
+            # vispcd(l1_points_pos, iter=j)
+
+        
     return points.cpu().detach().numpy()
 
 
@@ -145,7 +223,7 @@ def main(args):
     checkpoint = torch.load(str(experiment_dir) + '/checkpoints/best_model.pth')
     classifier.load_state_dict(checkpoint['model_state_dict'])
 
-    inverted_points = invert(classifier.eval(), num_class=num_class, class_to_invert=0)
+    inverted_points = invert(classifier.eval(), num_class=num_class, class_to_invert=args.class_to_invert)
     print(inverted_points)
 
 
