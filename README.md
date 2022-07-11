@@ -10,4 +10,4 @@ Please refer to the folder `vis_det` for inverting 3D detection model.
 ## Inverting point-cloud-based 3D Classification Model
 ![Classfication](/resource/classification_inversion.png)
 
-Please refer to the folder `Pointnet_Pointnet2_pytorch` for inverting 3D detection model.
+Please refer to the folder `Pointnet_Pointnet2_pytorch` for inverting 3D classification model.
